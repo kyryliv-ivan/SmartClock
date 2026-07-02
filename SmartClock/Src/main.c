@@ -18,8 +18,81 @@
 
 #include <stdint.h>
 
-int main(void)
-{
-    /* Loop forever */
-	for(;;);
+#define RCC_BASE         0x40023800
+#define RCC_AHB1ENR      (*(volatile uint32_t*) (RCC_BASE + 0x30))
+
+#define GPIOA_BASE       0x40020000
+#define GPIOA_MODER      (*(volatile uint32_t*) (GPIOA_BASE + 0x00))
+#define GPIOA_OTYPER     (*(volatile uint32_t*) (GPIOA_BASE + 0x04))
+#define GPIOA_OSPEEDR    (*(volatile uint32_t*) (GPIOA_BASE + 0x08))
+#define GPIOA_BSRR       (*(volatile uint32_t*) (GPIOA_BASE + 0x18))
+
+#define DATA            7  // DS
+#define CLK             5  // SHCP
+#define LATCH           4  // STCP
+#define OE              3  // OE
+
+#define                 COLON_BIT (1U << 4)
+
+#define DATA_H          GPIOA_BSRR = (1U << DATA)
+#define DATA_L          GPIOA_BSRR = (1U << (DATA + 16))
+#define CLK_H           GPIOA_BSRR = (1U << CLK)
+#define CLK_L           GPIOA_BSRR = (1U << (CLK + 16))
+#define LAT_H           GPIOA_BSRR = (1U << LATCH)
+#define LAT_L           GPIOA_BSRR = (1U << (LATCH + 16))
+#define OE_ON           GPIOA_BSRR = (1U << (OE + 16))
+
+uint8_t digits[4] = { 1, 2, 3, 4 };
+uint8_t colon_on = 1;
+
+const uint8_t segment_map[10] = { 0x3F, 0x06, 0x5B, 0x4F, 0x66,
+		                          0x6D, 0x7D, 0x07, 0x7F, 0x6F };
+
+void gpio_init(void) {
+	RCC_AHB1ENR |= (1U << 0);
+	GPIOA_MODER |= (1U << (DATA * 2))
+			     | (1U << (CLK * 2))
+			     | (1U << (LATCH * 2))
+			     | (1U << (OE * 2));
+
+	GPIOA_OTYPER = 0;
+
+	GPIOA_OSPEEDR |= (3U << (DATA * 2))
+			       | (3U << (CLK * 2))
+			       | (3U << (LATCH * 2))
+			       | (3U << (OE * 2));
+	OE_ON;
+
+}
+
+void shift16(uint16_t data) {
+	for (int i = 15; i >= 0; i--) {
+		if (data & (1U << i))
+			DATA_H;
+		else
+			DATA_L;
+		CLK_H;
+		CLK_L;
+
+	}
+	LAT_H;
+	LAT_L;
+}
+
+int main(void) {
+
+	gpio_init();
+
+	while (1) {
+		for (uint8_t d = 0; d < 4; d++) {
+			uint8_t colon_mask = colon_on ? COLON_BIT : 0;
+			uint8_t segment = segment_map[digits[d]];
+			uint8_t ctrl = (1U << (3 - d)) | colon_mask;
+
+			shift16(((uint16_t) ctrl << 8) | segment);
+
+			for (volatile int t = 0; t < 2000; t++);
+		}
+	}
+
 }
